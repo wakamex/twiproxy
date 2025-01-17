@@ -6,7 +6,7 @@ import sqlite3
 from mitmproxy import http
 
 import twiproxy.tokens
-from twiproxy.access import parse_body
+from twiproxy.access_direct import parse_body
 
 
 def init_db():
