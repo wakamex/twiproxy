@@ -80,6 +80,37 @@ def extract_tweet_info(tweet_data, current_time):
         print(f"Error extracting tweet info: {str(e)}")
         return None
 
+def parse_body(body_json, current_time):
+    """Parse the timeline body JSON and extract tweet information.
+
+    Args:
+        body_json: The parsed JSON body from the response
+        current_time: Current datetime with timezone for age calculations
+
+    Returns:
+        List of dictionaries containing tweet information
+    """
+    tweets = []
+    try:
+        if 'data' in body_json and 'home' in body_json['data']:
+            timeline = body_json['data']['home']['home_timeline_urt']
+            for instruction in timeline.get('instructions', []):
+                if instruction['type'] == 'TimelineAddEntries':
+                    for entry in instruction['entries']:
+                        if 'content' in entry and 'itemContent' in entry['content']:
+                            tweet_data = entry['content']['itemContent']
+                            if DEBUG:
+                                print("\nTweet data structure:")
+                                print(json.dumps(tweet_data, indent=2))
+                            if tweet_data['itemType'] == 'TimelineTweet':
+                                tweet_info = extract_tweet_info(tweet_data, current_time)
+                                if tweet_info:
+                                    tweet_info['tweet_id'] = tweet_data['tweet_results']['result'].get('rest_id')
+                                    tweets.append(tweet_info)
+    except Exception as e:
+        print(f"\nError parsing timeline: {str(e)}")
+    return tweets
+
 num_display=0
 for row in data:
     # Only show timeline-related requests
@@ -96,26 +127,15 @@ for row in data:
     if row[4]:
         try:
             body_json = json.loads(row[4])
-            if 'data' in body_json and 'home' in body_json['data']:
-                timeline = body_json['data']['home']['home_timeline_urt']
-                for instruction in timeline.get('instructions', []):
-                    if instruction['type'] == 'TimelineAddEntries':
-                        for entry in instruction['entries']:
-                            if 'content' in entry and 'itemContent' in entry['content']:
-                                tweet_data = entry['content']['itemContent']
-                                if DEBUG:
-                                    print("\nTweet data structure:")
-                                    print(json.dumps(tweet_data, indent=2))
-                                if tweet_data['itemType'] == 'TimelineTweet':
-                                    tweet_info = extract_tweet_info(tweet_data, current_time)
-                                    if tweet_info:
-                                        print(f"\n@{tweet_info['username']} ({tweet_info['name']})")
-                                        if 'rest_id' in tweet_data['tweet_results']['result']:
-                                            print(f"Tweet ID: {tweet_data['tweet_results']['result']['rest_id']}")
-                                        print(f"Tweet: {tweet_info['text'][:500]}")
-                                        print(f"Age: {tweet_info['age_hours']} hours")
-                                        print(f"Total engagement: {tweet_info['likes']} likes, {tweet_info['retweets']} retweets, {tweet_info['replies']} replies, {tweet_info['views']} views")
-                                        print(f"Engagement per hour: {tweet_info['engagement_per_hour']['likes']} likes/h, {tweet_info['engagement_per_hour']['retweets']} retweets/h, {tweet_info['engagement_per_hour']['replies']} replies/h, {tweet_info['engagement_per_hour']['views']} views/h")
+            tweets = parse_body(body_json, current_time)
+            for tweet in tweets:
+                print(f"\n@{tweet['username']} ({tweet['name']})")
+                if tweet['tweet_id']:
+                    print(f"Tweet ID: {tweet['tweet_id']}")
+                print(f"Tweet: {tweet['text'][:500]}")
+                print(f"Age: {tweet['age_hours']} hours")
+                print(f"Total engagement: {tweet['likes']} likes, {tweet['retweets']} retweets, {tweet['replies']} replies, {tweet['views']} views")
+                print(f"Engagement per hour: {tweet['engagement_per_hour']['likes']} likes/h, {tweet['engagement_per_hour']['retweets']} retweets/h, {tweet['engagement_per_hour']['replies']} replies/h, {tweet['engagement_per_hour']['views']} views/h")
         except Exception as e:
             print(f"\nError parsing timeline: {str(e)}")
             print("Raw body preview:")
