@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 import sqlite3
@@ -5,10 +6,12 @@ import sqlite3
 from mitmproxy import http
 
 import proxy.tokens
+from proxy.access import parse_body
 
 
 def init_db():
-    """Initialize database tables."""
+    """Initialize the databases."""
+    # Initialize requests database
     with sqlite3.connect("requests.db") as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS requests (
@@ -20,7 +23,23 @@ def init_db():
                 body TEXT
             )
         """)
-        conn.commit()
+
+    # Initialize tweets database
+    with sqlite3.connect("tweets.db") as conn:
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS tweets (
+            tweet_id TEXT PRIMARY KEY,
+            username TEXT,
+            name TEXT,
+            text TEXT,
+            created_at TEXT,
+            likes INTEGER,
+            retweets INTEGER,
+            replies INTEGER,
+            views INTEGER,
+            captured_at TEXT
+        )
+        """)
 
 DEBUG = False  # Enable debug mode for better logging
 
@@ -34,13 +53,13 @@ def parse_cookies(cookie_str):
     cookie_dict = {}
     if not cookie_str:
         return cookie_dict
-    
+
     pairs = cookie_str.split(';')
     for pair in pairs:
         if '=' in pair:
             name, value = pair.split('=', 1)
             cookie_dict[name.strip()] = value.strip()
-    
+
     return cookie_dict
 
 def debug_log(message):
@@ -51,7 +70,7 @@ def debug_log(message):
 
 def save_tokens(headers, token_store):
     debug_log(f"\nHeaders: {dict(headers)}")
-        
+
     # Convert headers to case-insensitive dict
     headers_lower = {k.lower(): v for k, v in headers.items()}
     debug_log(f"Headers lower: {headers_lower}")
@@ -64,7 +83,7 @@ def save_tokens(headers, token_store):
     if 'cookie' in headers_lower:
         cookie_dict = parse_cookies(headers_lower['cookie'])
         debug_log(f"Parsed cookies: {cookie_dict}")
-        
+
         # Save cookie if it has all required authentication tokens
         required_cookies = {'auth_token', 'ct0', 'gt'}
         if all(cookie in cookie_dict for cookie in required_cookies):
@@ -84,11 +103,39 @@ def save_tokens(headers, token_store):
         token_store.save_token('x-client-uuid', headers_lower['x-client-uuid'])
         debug_log(f"Found x-client-uuid: {headers_lower['x-client-uuid']}")
 
+def save_tweets(tweets, captured_at):
+    """Save tweets to the tweets database.
+
+    Args:
+        tweets: List of tweet dictionaries from parse_body
+        captured_at: Timestamp when tweets were captured
+    """
+    with sqlite3.connect("tweets.db") as conn:
+        for tweet in tweets:
+            conn.execute("""
+                INSERT OR REPLACE INTO tweets (
+                    tweet_id, username, name, text, created_at,
+                    likes, retweets, replies, views, captured_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                tweet.get('tweet_id'),
+                tweet.get('username'),
+                tweet.get('name'),
+                tweet.get('text'),
+                tweet.get('created_at'),
+                tweet.get('likes', 0),
+                tweet.get('retweets', 0),
+                tweet.get('replies', 0),
+                tweet.get('views', 0),
+                captured_at
+            ))
+        conn.commit()
+
 def response(flow: http.HTTPFlow) -> None:
     """Handle responses from Twitter."""
     init_db()  # Ensure tables exist
     token_store = proxy.tokens.TokenStore()  # Initialize token store
-    
+
     if flow.response and flow.response.headers:
         debug_log(f"\nResponse Headers: {dict(flow.response.headers)}")
 
@@ -109,7 +156,7 @@ def response(flow: http.HTTPFlow) -> None:
                         if name == 'gt':
                             token_store.update_cookie('gt', value)
                             debug_log(f"Added gt cookie to tokens: {value}")
-        
+
         # Log all requests and responses
         log_request(flow)
 
@@ -117,7 +164,7 @@ def request(flow: http.HTTPFlow) -> None:
     """Handle requests to Twitter."""
     init_db()  # Ensure tables exist
     token_store = proxy.tokens.TokenStore()  # Initialize token store
-    
+
     if flow.request and flow.request.headers:
         save_tokens(flow.request.headers, token_store)
 
@@ -126,39 +173,45 @@ def log_request(flow):
     debug_log('\n' + '=' * 80)
     debug_log(f"URL: {flow.request.url}")
     debug_log(f"Method: {flow.request.method}")
-    debug_log("Headers:")
-    for key, value in flow.request.headers.items():
-        debug_log(f"  {key}: {value}")
-    debug_log("Body:")
-    if flow.request.content:
+    debug_log(f"Status: {flow.response.status_code if flow.response else 'No response'}")
+
+    if flow.request.headers:
+        debug_log("\nRequest Headers:")
+        for name, value in flow.request.headers.items():
+            debug_log(f"{name}: {value}")
+
+    if flow.response and flow.response.headers:
+        debug_log("\nResponse Headers:")
+        for name, value in flow.response.headers.items():
+            debug_log(f"{name}: {value}")
+
+    if flow.response and flow.response.content:
         try:
-            debug_log(flow.request.content.decode('utf-8'))
+            body = flow.response.content.decode('utf-8')
+            debug_log(body)
+
+            # Store in requests table
+            with sqlite3.connect("requests.db") as conn:
+                conn.execute(
+                    "INSERT INTO requests (method, url, status, headers, body) VALUES (?, ?, ?, ?, ?)",
+                    (flow.request.method, flow.request.url, flow.response.status_code,
+                     json.dumps(dict(flow.request.headers)), body)
+                )
+                conn.commit()
+
+            # Parse and store tweets if this is a timeline response
+            if 'HomeTimeline' in flow.request.url:
+                try:
+                    body_json = json.loads(body)
+                    current_time = datetime.datetime.now(datetime.timezone.utc)
+                    tweets = parse_body(body_json, current_time)
+                    if tweets:
+                        save_tweets(tweets, current_time.isoformat())
+                except Exception as e:
+                    debug_log(f"Error parsing tweets: {str(e)}")
+
         except UnicodeDecodeError:
             debug_log("[Binary content]")
 
-    if flow.response:
-        debug_log("Response:")
-        debug_log(f"  Status: {flow.response.status_code}")
-        debug_log("  Headers:")
-        for key, value in flow.response.headers.items():
-            debug_log(f"    {key}: {value}")
-        debug_log("  Body:")
-        if flow.response.content:
-            try:
-                body = flow.response.content.decode('utf-8')
-                debug_log(body)
-                
-                # Store in requests table
-                with sqlite3.connect("requests.db") as conn:
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "INSERT INTO requests (method, url, status, headers, body) VALUES (?, ?, ?, ?, ?)",
-                        (flow.request.method, flow.request.url, flow.response.status_code, json.dumps(dict(flow.request.headers)), body)
-                    )
-                    conn.commit()
-            except UnicodeDecodeError:
-                debug_log("[Binary content]")
-
 def done():
-    """Called when the script shuts down."""
-    pass
+    """Call this when the script shuts down."""
