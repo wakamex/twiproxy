@@ -2,8 +2,6 @@ import datetime
 import json
 import sqlite3
 
-from dateutil import parser
-
 # Connect to the SQLite database
 conn = sqlite3.connect("requests.db")
 cursor = conn.cursor()
@@ -54,7 +52,7 @@ def extract_tweet_info(tweet_data, current_time):
 
         # Calculate tweet age in hours using provided current time
         if created_at:
-            tweet_time = parser.parse(created_at)
+            tweet_time = datetime.datetime.strptime(created_at, "%a %b %d %H:%M:%S %z %Y")
             age_hours = max(0.1, (current_time - tweet_time).total_seconds() / 3600)  # Avoid division by zero
         else:
             age_hours = 0
