@@ -43,11 +43,6 @@ def init_db():
 
 DEBUG = False  # Enable debug mode for better logging
 
-def load_inject_script():
-    script_path = os.path.join(os.path.dirname(__file__), 'inject.js')
-    with open(script_path, 'r', encoding='utf-8') as f:
-        return f.read()
-
 def parse_cookies(cookie_str):
     """Parse cookie string into a dictionary."""
     cookie_dict = {}
