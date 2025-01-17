@@ -1,5 +1,5 @@
 [project]
-name = "proxy"
+name = "twiproxy"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [project.scripts]
-proxy = "proxy:main"
+twiproxy = "twiproxy:main"
 
 [build-system]
 requires = ["hatchling"]

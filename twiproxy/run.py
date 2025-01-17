@@ -5,8 +5,8 @@ import sqlite3
 
 from mitmproxy import http
 
-import proxy.tokens
-from proxy.access import parse_body
+import twiproxy.tokens
+from twiproxy.access import parse_body
 
 
 def init_db():
@@ -134,7 +134,7 @@ def save_tweets(tweets, captured_at):
 def response(flow: http.HTTPFlow) -> None:
     """Handle responses from Twitter."""
     init_db()  # Ensure tables exist
-    token_store = proxy.tokens.TokenStore()  # Initialize token store
+    token_store = twiproxy.tokens.TokenStore()  # Initialize token store
 
     if flow.response and flow.response.headers:
         debug_log(f"\nResponse Headers: {dict(flow.response.headers)}")
@@ -163,7 +163,7 @@ def response(flow: http.HTTPFlow) -> None:
 def request(flow: http.HTTPFlow) -> None:
     """Handle requests to Twitter."""
     init_db()  # Ensure tables exist
-    token_store = proxy.tokens.TokenStore()  # Initialize token store
+    token_store = twiproxy.tokens.TokenStore()  # Initialize token store
 
     if flow.request and flow.request.headers:
         save_tokens(flow.request.headers, token_store)

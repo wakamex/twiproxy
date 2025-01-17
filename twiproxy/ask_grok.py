@@ -47,14 +47,14 @@ import sys
 
 import requests
 
-import proxy.tokens
+import twiproxy.tokens
 
 TIMEOUT = 60
 DEBUG = False
 
 def load_tokens():
     """Load tokens from the database."""
-    store = proxy.tokens.TokenStore()
+    store = twiproxy.tokens.TokenStore()
     tokens = store.get_all_tokens()
     if not tokens:
         print("Error: No tokens found. Please make a request to Grok first.")
