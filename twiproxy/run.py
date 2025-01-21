@@ -1,6 +1,5 @@
 import datetime
 import json
-import os
 import sqlite3
 
 from mitmproxy import http
@@ -32,12 +31,20 @@ def init_db():
             username TEXT,
             name TEXT,
             text TEXT,
-            created_at TEXT,
+            created_at TEXT
+        )
+        """)
+
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS engagements (
+            tweet_id TEXT,
             likes INTEGER,
             retweets INTEGER,
             replies INTEGER,
             views INTEGER,
-            captured_at TEXT
+            captured_at TEXT,
+            PRIMARY KEY (tweet_id, captured_at),
+            FOREIGN KEY (tweet_id) REFERENCES tweets(tweet_id)
         )
         """)
 
@@ -109,15 +116,21 @@ def save_tweets(tweets, captured_at):
         for tweet in tweets:
             conn.execute("""
                 INSERT OR REPLACE INTO tweets (
-                    tweet_id, username, name, text, created_at,
-                    likes, retweets, replies, views, captured_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    tweet_id, username, name, text, created_at
+                ) VALUES (?, ?, ?, ?, ?)
             """, (
                 tweet.get('tweet_id'),
                 tweet.get('username'),
                 tweet.get('name'),
                 tweet.get('text'),
-                tweet.get('created_at'),
+                tweet.get('created_at')
+            ))
+            conn.execute("""
+                INSERT OR REPLACE INTO engagements (
+                    tweet_id, likes, retweets, replies, views, captured_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                tweet.get('tweet_id'),
                 tweet.get('likes', 0),
                 tweet.get('retweets', 0),
                 tweet.get('replies', 0),
