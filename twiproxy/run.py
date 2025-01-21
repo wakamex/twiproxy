@@ -31,7 +31,8 @@ def init_db():
             username TEXT,
             name TEXT,
             text TEXT,
-            created_at TEXT
+            created_at TEXT,
+            following BOOLEAN
         )
         """)
 
@@ -116,14 +117,15 @@ def save_tweets(tweets, captured_at):
         for tweet in tweets:
             conn.execute("""
                 INSERT OR REPLACE INTO tweets (
-                    tweet_id, username, name, text, created_at
-                ) VALUES (?, ?, ?, ?, ?)
+                    tweet_id, username, name, text, created_at, following
+                ) VALUES (?, ?, ?, ?, ?, ?)
             """, (
                 tweet.get('tweet_id'),
                 tweet.get('username'),
                 tweet.get('name'),
                 tweet.get('text'),
-                tweet.get('created_at')
+                tweet.get('created_at'),
+                tweet.get('following', False)  # SQLite will convert boolean to 0/1
             ))
             conn.execute("""
                 INSERT OR REPLACE INTO engagements (

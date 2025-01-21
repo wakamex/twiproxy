@@ -16,3 +16,4 @@ tweets.db
 # Old files
 old/
 *.png
+tweets.txt

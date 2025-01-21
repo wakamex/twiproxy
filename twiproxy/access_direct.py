@@ -2,37 +2,50 @@ import datetime
 import json
 import sqlite3
 
+
+def debug_log(message):
+    """Write a message to proxy.log."""
+    with open('proxy.log', 'a', encoding='utf-8') as log:
+        log.write(str(message) + '\n')
+
+DEBUG = False  # Enable debug mode for better logging
+
+# Get current time with timezone
+current_time = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-5)))
+
 # Connect to the SQLite database
 conn = sqlite3.connect("requests.db")
 cursor = conn.cursor()
 
+NUM_TO_DISPLAY = 100
+
 # First print all URLs to see what we have
-print("Available URLs:")
+debug_log("Available URLs:")
 cursor.execute("SELECT DISTINCT url FROM requests ORDER BY url")
 for (url,) in cursor.fetchall():
-    print(f"URL: {url}")
-print("\n" + "="*80 + "\n")
+    debug_log(f"URL: {url}")
+debug_log("\n" + "="*80 + "\n")
 
 # Fetch the last 100 requests
 cursor.execute("SELECT timestamp, url, method, status, body FROM requests ORDER BY timestamp DESC LIMIT 100")
 data = cursor.fetchall()
-
-NUM_TO_DISPLAY = 100
-DEBUG=False
-
-# Get current time with timezone
-current_time = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-5)))
 
 def extract_tweet_info(tweet_data, current_time):
     try:
         result = tweet_data['tweet_results']['result']
         if 'tweet' in result:
             result = result['tweet']
-            
+
         # Get user info
         user = result['core']['user_results']['result']['legacy']
         username = user.get('screen_name', '')
         name = user.get('name', '')
+        following = user.get('following', False)
+
+        if DEBUG:
+            debug_log(f"\nFollowing status for @{username}:")
+            debug_log(f"Raw user data: {json.dumps(user, indent=2)}")
+            debug_log(f"Following: {following}")
 
         # Get tweet text and timestamp
         if 'legacy' in result:
@@ -72,10 +85,11 @@ def extract_tweet_info(tweet_data, current_time):
                 'retweets': round(retweet_count / age_hours, 1),
                 'replies': round(reply_count / age_hours, 1),
                 'views': round(view_count / age_hours, 1)
-            }
+            },
+            'following': following
         }
     except (KeyError, TypeError) as e:
-        print(f"Error extracting tweet info: {str(e)}")
+        debug_log(f"Error extracting tweet info: {str(e)}")
         return None
 
 def parse_body(body_json, current_time):
@@ -98,15 +112,15 @@ def parse_body(body_json, current_time):
                         if 'content' in entry and 'itemContent' in entry['content']:
                             tweet_data = entry['content']['itemContent']
                             if DEBUG:
-                                print("\nTweet data structure:")
-                                print(json.dumps(tweet_data, indent=2))
+                                debug_log("\nTweet data structure:")
+                                debug_log(json.dumps(tweet_data, indent=2))
                             if tweet_data['itemType'] == 'TimelineTweet':
                                 tweet_info = extract_tweet_info(tweet_data, current_time)
                                 if tweet_info:
                                     tweet_info['tweet_id'] = tweet_data['tweet_results']['result'].get('rest_id')
                                     tweets.append(tweet_info)
     except Exception as e:
-        print(f"\nError parsing timeline: {str(e)}")
+        debug_log(f"\nError parsing timeline: {str(e)}")
     return tweets
 
 num_display=0
@@ -115,11 +129,11 @@ for row in data:
     if 'HomeTimeline' not in row[1]:
         continue
 
-    print("=" * 80)
-    print(f"Time: {row[0]}")
-    print(f"URL: {row[1]}")
-    print(f"Method: {row[2]}")
-    print(f"Status: {row[3]}")
+    debug_log("=" * 80)
+    debug_log(f"Time: {row[0]}")
+    debug_log(f"URL: {row[1]}")
+    debug_log(f"Method: {row[2]}")
+    debug_log(f"Status: {row[3]}")
 
     # For timeline requests, extract tweets
     if row[4]:
@@ -127,21 +141,22 @@ for row in data:
             body_json = json.loads(row[4])
             tweets = parse_body(body_json, current_time)
             for tweet in tweets:
-                print(f"\n@{tweet['username']} ({tweet['name']})")
+                debug_log(f"\n@{tweet['username']} ({tweet['name']})")
                 if tweet['tweet_id']:
-                    print(f"Tweet ID: {tweet['tweet_id']}")
-                print(f"Tweet: {tweet['text'][:500]}")
-                print(f"Age: {tweet['age_hours']} hours")
-                print(f"Total engagement: {tweet['likes']} likes, {tweet['retweets']} retweets, {tweet['replies']} replies, {tweet['views']} views")
-                print(f"Engagement per hour: {tweet['engagement_per_hour']['likes']} likes/h, {tweet['engagement_per_hour']['retweets']} retweets/h, {tweet['engagement_per_hour']['replies']} replies/h, {tweet['engagement_per_hour']['views']} views/h")
+                    debug_log(f"Tweet ID: {tweet['tweet_id']}")
+                debug_log(f"Tweet: {tweet['text'][:500]}")
+                debug_log(f"Age: {tweet['age_hours']} hours")
+                debug_log(f"Total engagement: {tweet['likes']} likes, {tweet['retweets']} retweets, {tweet['replies']} replies, {tweet['views']} views")
+                debug_log(f"Engagement per hour: {tweet['engagement_per_hour']['likes']} likes/h, {tweet['engagement_per_hour']['retweets']} retweets/h, {tweet['engagement_per_hour']['replies']} replies/h, {tweet['engagement_per_hour']['views']} views/h")
+                debug_log(f"Following: {tweet['following']}")
         except Exception as e:
-            print(f"\nError parsing timeline: {str(e)}")
-            print("Raw body preview:")
-            print(row[4][:500])
+            debug_log(f"\nError parsing timeline: {str(e)}")
+            debug_log("Raw body preview:")
+            debug_log(row[4][:500])
     else:
-        print("\nBody: [No Body]")
+        debug_log("\nBody: [No Body]")
 
-    print()
+    debug_log("")
 
     num_display += 1
     if num_display >= NUM_TO_DISPLAY:
